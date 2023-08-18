@@ -39,31 +39,15 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    - name: add .local/bin to path
+      run: "echo $HOME/.local/bin >> $GITHUB_PATH"
+      shell: bash
+
     - name: Check for poetry lock
       run: "test -f poetry.lock || (echo No lock file! && false)"
       shell: bash
 
-    # Install poetry. It takes ~10seconds for a clean pip install, most of which is
-    # the installation rather than the downloading. So instead, we cache the user-base
-    # directory (~/.local). For this to be safe:
-    # - we must not write to `.local` as part of the CI
-    # - we must not install anything with the system `pip` other than poetry.
-    # Based on the writeup at:
-    # https://github.com/snok/install-poetry/blob/main/README.md#caching-the-poetry-installation
-    - name: Locate user site
-      id: site-user-base
-      run: echo "dir=$(python -m site --user-base)" >> "$GITHUB_OUTPUT"
-      shell: bash
-
-    - name: Restore/cache poetry installation
-      id: poetry-install-cache
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.site-user-base.outputs.dir }}
-        key: poetry-install-cache-${{ steps.setup-python.outputs.python-version }}-${{ inputs.poetry-version }}
-
     - name: Install poetry from scratch
-      if: "${{ steps.poetry-install-cache.outputs.cache-hit != 'true' }}"
       run: python -m pip install --user poetry==${{ inputs.poetry-version }}
       shell: bash
 
@@ -73,13 +57,6 @@ runs:
       id: poetry-venvs
       run: echo "dir=$(python -m poetry config virtualenvs.path)" >> "$GITHUB_OUTPUT"
       shell: bash
-
-    - name: Restore/cache poetry venv
-      id: poetry-venv-cache
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.poetry-venvs.outputs.dir }}
-        key: poetry-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}-${{ inputs.extras }}
 
     - name: Check that the poetry lockfile is up to date
       # This is rather hacky. We look for the warning message in poetry's
