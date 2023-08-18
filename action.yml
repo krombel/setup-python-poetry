@@ -47,7 +47,32 @@ runs:
       run: "test -f poetry.lock || (echo No lock file! && false)"
       shell: bash
 
+    # Install poetry. It takes ~10seconds for a clean pip install, most of which is
+    # the installation rather than the downloading. So instead, we cache the user-base
+    # directory (~/.local). For this to be safe:
+    # - we must not write to `.local` as part of the CI
+    # - we must not install anything with the system `pip` other than poetry.
+    # Based on the writeup at:
+    # https://github.com/snok/install-poetry/blob/main/README.md#caching-the-poetry-installation
+    - name: Locate user site
+      id: site-user-base
+      run: echo "dir=$(python -m site --user-base)" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Generate poetry-install-cache key
+      id: poetry-install-cache-key
+      run: echo "key=poetry-install-cache-${{ steps.setup-python.outputs.python-version }}-${{ inputs.poetry-version }}" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Restore/cache poetry installation
+      id: poetry-install-cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.site-user-base.outputs.dir }}
+        key: ${{ steps.poetry-install-cache-key.outputs.key }}
+
     - name: Install poetry from scratch
+      if: "${{ steps.poetry-install-cache.outputs.cache-hit != 'true' }}"
       run: python -m pip install --user poetry==${{ inputs.poetry-version }}
       shell: bash
 
@@ -55,8 +80,17 @@ runs:
     # Again, we're following snok/install-poetry's README.
     - name: Locate poetry venv
       id: poetry-venvs
-      run: echo "dir=$(python -m poetry config virtualenvs.path)" >> "$GITHUB_OUTPUT"
+      run: |
+        echo "dir=$(python -m poetry config virtualenvs.path)" >> "$GITHUB_OUTPUT"
+        echo "key=poetry-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-$(sha256sum 'poetry.lock' | cut -d' ' -f 1)-${{ inputs.extras }}" >> "$GITHUB_OUTPUT"
       shell: bash
+
+    - name: Restore/cache poetry venv
+      id: poetry-venv-cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.poetry-venvs.outputs.dir }}
+        key: ${{ steps.poetry-venvs.outputs.key }}
 
     - name: Check that the poetry lockfile is up to date
       # This is rather hacky. We look for the warning message in poetry's
